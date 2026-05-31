@@ -14,10 +14,14 @@ body{margin:0;font-family:Arial,sans-serif;background:#1c1c1c;color:white}
 .upload{background:#0ea5e9;color:white;border-radius:8px;padding:10px 14px;cursor:pointer}
 .upload input{display:none}
 button{background:#2b2b2b;color:white;border:none;border-radius:8px;padding:10px 14px;cursor:pointer}
+.adminBox{display:flex;gap:8px;align-items:center}
+.adminBox input{background:#111;color:white;border:1px solid #444;border-radius:8px;padding:10px}
 .grid{display:flex;flex-wrap:wrap;gap:24px;padding:24px}
 .card{width:220px;background:#111;border:1px solid #444;border-radius:10px;padding:8px}
 .card img,.card video{width:100%;height:160px;object-fit:cover;border-radius:8px;cursor:pointer}
 .name{font-size:12px;color:#ccc;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deleteBtn{width:100%;margin-top:8px;background:#dc2626;color:white;border:none;border-radius:8px;padding:8px;display:none}
+.admin .deleteBtn{display:block}
 .preview{position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;z-index:999}
 .preview img{max-width:92vw;max-height:92vh;object-fit:contain}
 .notice{padding:0 24px;color:#bbb}
@@ -35,7 +39,14 @@ footer{position:fixed;bottom:14px;width:100%;text-align:center;color:#888;font-s
   <label class="upload">＋ 上传照片/视频
     <input type="file" accept="image/*,video/*" multiple onchange="uploadFiles(this.files)">
   </label>
+
   <button onclick="loadFiles()">刷新</button>
+
+  <div class="adminBox">
+    <input id="adminPass" type="password" placeholder="管理员密码">
+    <button onclick="adminLogin()">管理员登录</button>
+  </div>
+
   <span style="color:#aaa">Supabase 云端保存，任何人打开网址都能看到</span>
 </div>
 
@@ -49,16 +60,25 @@ footer{position:fixed;bottom:14px;width:100%;text-align:center;color:#888;font-s
 const SUPABASE_URL = "https://lkrztdewycwcqjycusay.supabase.co";
 const SUPABASE_KEY = "sb_publishable_JOoemeZyMqq8q5o6edJpew_yVBp_MOU";
 const BUCKET = "gallery";
+const ADMIN_PASS = "777888";
 
 const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const fallbackFiles = [
-  {
-    name:"photo_2025-01-24_03-39-29.jpg",
-    url:"https://lkrztdewycwcqjycusay.supabase.co/storage/v1/object/public/gallery/photo_2025-01-24_03-39-29.jpg",
-    type:"photo"
+let isAdmin = localStorage.getItem("gallery_admin") === "yes";
+let currentFiles = [];
+
+function adminLogin(){
+  const pass = document.getElementById("adminPass").value;
+  if(pass === ADMIN_PASS){
+    isAdmin = true;
+    localStorage.setItem("gallery_admin","yes");
+    document.body.classList.add("admin");
+    alert("管理员模式已开启");
+    render(currentFiles);
+  }else{
+    alert("管理员密码错误");
   }
-];
+}
 
 function isMedia(name){
   const n = name.toLowerCase();
@@ -86,35 +106,37 @@ async function loadFiles(){
 
     if(error) throw error;
 
-    let files = (data || [])
+    const files = (data || [])
       .filter(f => f.name && isMedia(f.name))
       .map(f => ({
         name:f.name,
+        path:f.name,
         url:publicUrl(f.name),
         type:isVideo(f.name) ? "video" : "photo"
       }));
 
-    if(files.length === 0){
-      files = fallbackFiles;
-      document.getElementById("notice").innerText = "暂时读取不到列表，先显示测试图片。";
-    }else{
-      document.getElementById("notice").innerText = "已读取 " + files.length + " 个文件";
-    }
-
+    currentFiles = files;
+    document.getElementById("notice").innerText = "已读取 " + files.length + " 个文件";
     render(files);
   }catch(e){
-    document.getElementById("notice").innerText = "读取失败，先显示测试图片。错误：" + e.message;
-    render(fallbackFiles);
+    document.getElementById("notice").innerText = "读取失败：" + e.message;
   }
 }
 
 function render(files){
+  if(isAdmin){
+    document.body.classList.add("admin");
+  }else{
+    document.body.classList.remove("admin");
+  }
+
   document.getElementById("grid").innerHTML = files.map(item => `
     <div class="card">
       ${item.type === "video"
         ? `<video src="${item.url}" controls></video>`
         : `<img src="${item.url}" onclick="openPreview('${encodeURIComponent(item.url)}')">`}
       <div class="name">${item.name}</div>
+      <button class="deleteBtn" onclick="deleteFile('${item.path}')">删除</button>
     </div>
   `).join("");
 }
@@ -155,6 +177,25 @@ async function uploadFiles(fileList){
     }
   }
 
+  await loadFiles();
+}
+
+async function deleteFile(path){
+  if(!isAdmin){
+    alert("请先输入管理员密码");
+    return;
+  }
+
+  if(!confirm("确定删除这个文件吗？")) return;
+
+  const { error } = await client.storage.from(BUCKET).remove([path]);
+
+  if(error){
+    alert("删除失败：" + error.message + "\\n需要在 Supabase Storage Policies 开启 DELETE 权限。");
+    return;
+  }
+
+  alert("已删除");
   await loadFiles();
 }
 
