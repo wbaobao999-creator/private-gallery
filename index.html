@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>私人图库</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#1c1c1c;color:#fff}
+.page{min-height:100vh;background:#1c1c1c;color:#fff}
+.topbar{height:54px;background:#151515;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #292929}
+.topbar h2{margin:0;font-size:18px}
+.topbar button{background:#2b2b2b;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer}
+.newAlbum{display:flex;gap:10px;padding:24px}
+.newAlbum input{width:260px;padding:10px;border-radius:8px;border:1px solid #444;background:#111;color:#fff}
+.newAlbum button,.upload label{background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.upload{padding:24px}
+.upload input{display:none}
+.albumGrid{display:flex;flex-wrap:wrap;gap:32px;padding:24px}
+.album{width:220px}
+.cover{width:220px;height:160px;border:1px solid #555;box-shadow:0 0 0 2px #111,8px 8px 0 #0b0b0b;position:relative;cursor:pointer;overflow:hidden;background:#111}
+.cover img,.cover video{width:100%;height:100%;object-fit:cover}
+.empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:42px}
+.albumText{position:absolute;left:0;right:0;bottom:0;padding:10px;background:linear-gradient(transparent,rgba(0,0,0,.85));display:flex;flex-direction:column;gap:3px}
+.albumText b{font-size:16px;text-shadow:0 2px 4px #000}
+.albumText span{font-size:12px;color:#d1d5db}
+.albumDelete{margin-top:10px;width:100%;border:none;background:#991b1b;color:#fff;padding:8px;border-radius:8px;cursor:pointer}
+.mediaGrid{display:flex;flex-wrap:wrap;gap:18px;padding:24px}
+.mediaCard{width:180px;background:#111;border:1px solid #333;padding:8px;border-radius:10px}
+.mediaCard img,.mediaCard video{width:100%;height:130px;object-fit:cover;border-radius:8px}
+.delete{width:100%;margin-top:8px;background:#991b1b;color:#fff;border:none;padding:7px;border-radius:8px;cursor:pointer}
+.preview{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:999}
+.preview img{max-width:92vw;max-height:92vh;object-fit:contain}
+footer{position:fixed;bottom:14px;width:100%;text-align:center;color:#9ca3af;font-size:12px}
+@media(max-width:700px){.albumGrid,.mediaGrid{gap:14px;padding:14px}.album,.cover{width:160px}.cover{height:120px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const STORAGE_KEY="private_gallery_albums";
+let albums = loadAlbums();
+let current = null;
+let preview = null;
+
+function loadAlbums(){
+  try{
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [
+      {id:"album-1",title:"私人照片",date:"2026年5月",cover:"",items:[]},
+      {id:"album-2",title:"私人视频",date:"2026年5月",cover:"",items:[]}
+    ];
+  }catch(e){
+    return [];
+  }
+}
+
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(albums));
+}
+
+function render(){
+  const app=document.getElementById("app");
+
+  if(current){
+    const items=current.items.map(item=>`
+      <div class="mediaCard">
+        ${item.type==="video"
+          ? `<video src="${item.src}" controls></video>`
+          : `<img src="${item.src}" onclick="openPreview('${item.id}')">`}
+        <button class="delete" onclick="deleteItem('${item.id}')">删除</button>
+      </div>`).join("");
+
+    app.innerHTML = `
+      <div class="page">
+        <div class="topbar">
+          <button onclick="back()">← 返回</button>
+          <h2>${current.title}</h2>
+          <div></div>
+        </div>
+        <div class="upload">
+          <label>＋ 上传照片/视频
+            <input type="file" accept="image/*,video/*" multiple onchange="uploadFiles(this.files)">
+          </label>
+        </div>
+        <div class="mediaGrid">${items}</div>
+        ${preview ? `<div class="preview" onclick="closePreview()"><img src="${preview}"></div>` : ""}
+      </div>`;
+    return;
+  }
+
+  const cards = albums.map(a=>`
+    <div class="album">
+      <div class="cover" onclick="openAlbum('${a.id}')">
+        ${a.cover ? (a.cover.startsWith("data:video") ? `<video src="${a.cover}"></video>` : `<img src="${a.cover}">`) : `<div class="empty">🖼️</div>`}
+        <div class="albumText">
+          <b>💎 ${a.title}</b>
+          <span>${a.date}</span>
+        </div>
+      </div>
+      <button class="albumDelete" onclick="deleteAlbum('${a.id}')">删除相册</button>
+    </div>`).join("");
+
+  app.innerHTML = `
+    <div class="page">
+      <div class="topbar">
+        <div></div>
+        <h2>私人图库</h2>
+        <div></div>
+      </div>
+      <div class="newAlbum">
+        <input id="albumName" placeholder="新相册名称">
+        <button onclick="addAlbum()">＋ 新建相册</button>
+      </div>
+      <div class="albumGrid">${cards}</div>
+      <footer>本网站内容仅供私人浏览 © 2026</footer>
+    </div>`;
+}
+
+function addAlbum(){
+  const title=document.getElementById("albumName").value.trim();
+  if(!title) return alert("请输入相册名称");
+  albums.unshift({id:"album-"+Date.now(),title,date:new Date().toLocaleDateString("zh-CN"),cover:"",items:[]});
+  save();
+  render();
+}
+
+function deleteAlbum(id){
+  if(!confirm("确定删除这个相册吗？")) return;
+  albums=albums.filter(a=>a.id!==id);
+  save();
+  render();
+}
+
+function openAlbum(id){
+  current=albums.find(a=>a.id===id);
+  render();
+}
+
+function back(){
+  current=null;
+  preview=null;
+  render();
+}
+
+function uploadFiles(files){
+  const arr=Array.from(files);
+  Promise.all(arr.map(file=>new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve({
+      id:"item-"+Date.now()+"-"+Math.random(),
+      name:file.name,
+      type:file.type.startsWith("video")?"video":"photo",
+      src:reader.result
+    });
+    reader.readAsDataURL(file);
+  }))).then(newItems=>{
+    current.items=[...current.items,...newItems];
+    if(!current.cover && current.items[0]) current.cover=current.items[0].src;
+    albums=albums.map(a=>a.id===current.id?current:a);
+    save();
+    render();
+  });
+}
+
+function deleteItem(id){
+  current.items=current.items.filter(i=>i.id!==id);
+  current.cover=current.items[0]?.src || "";
+  albums=albums.map(a=>a.id===current.id?current:a);
+  save();
+  render();
+}
+
+function openPreview(id){
+  const item=current.items.find(i=>i.id===id);
+  preview=item.src;
+  render();
+}
+
+function closePreview(){
+  preview=null;
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
