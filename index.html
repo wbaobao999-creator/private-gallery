@@ -3,187 +3,163 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>私人图库</title>
+<title>私人云图库</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#1c1c1c;color:#fff}
-.page{min-height:100vh;background:#1c1c1c;color:#fff}
-.topbar{height:54px;background:#151515;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #292929}
-.topbar h2{margin:0;font-size:18px}
-.topbar button{background:#2b2b2b;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer}
-.newAlbum{display:flex;gap:10px;padding:24px}
-.newAlbum input{width:260px;padding:10px;border-radius:8px;border:1px solid #444;background:#111;color:#fff}
-.newAlbum button,.upload label{background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.upload{padding:24px}
+body{margin:0;font-family:Arial,sans-serif;background:#1c1c1c;color:white}
+.topbar{height:56px;background:#151515;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #333}
+.topbar h2{font-size:18px;margin:0}
+.toolbar{padding:20px 24px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.upload{background:#0ea5e9;color:white;border-radius:8px;padding:10px 14px;cursor:pointer}
 .upload input{display:none}
-.albumGrid{display:flex;flex-wrap:wrap;gap:32px;padding:24px}
-.album{width:220px}
-.cover{width:220px;height:160px;border:1px solid #555;box-shadow:0 0 0 2px #111,8px 8px 0 #0b0b0b;position:relative;cursor:pointer;overflow:hidden;background:#111}
-.cover img,.cover video{width:100%;height:100%;object-fit:cover}
-.empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:42px}
-.albumText{position:absolute;left:0;right:0;bottom:0;padding:10px;background:linear-gradient(transparent,rgba(0,0,0,.85));display:flex;flex-direction:column;gap:3px}
-.albumText b{font-size:16px;text-shadow:0 2px 4px #000}
-.albumText span{font-size:12px;color:#d1d5db}
-.albumDelete{margin-top:10px;width:100%;border:none;background:#991b1b;color:#fff;padding:8px;border-radius:8px;cursor:pointer}
-.mediaGrid{display:flex;flex-wrap:wrap;gap:18px;padding:24px}
-.mediaCard{width:180px;background:#111;border:1px solid #333;padding:8px;border-radius:10px}
-.mediaCard img,.mediaCard video{width:100%;height:130px;object-fit:cover;border-radius:8px}
-.delete{width:100%;margin-top:8px;background:#991b1b;color:#fff;border:none;padding:7px;border-radius:8px;cursor:pointer}
-.preview{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:999}
+button{background:#2b2b2b;color:white;border:none;border-radius:8px;padding:10px 14px;cursor:pointer}
+.grid{display:flex;flex-wrap:wrap;gap:24px;padding:24px}
+.card{width:220px;background:#111;border:1px solid #444;border-radius:10px;padding:8px}
+.card img,.card video{width:100%;height:160px;object-fit:cover;border-radius:8px;cursor:pointer}
+.name{font-size:12px;color:#ccc;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.preview{position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;z-index:999}
 .preview img{max-width:92vw;max-height:92vh;object-fit:contain}
-footer{position:fixed;bottom:14px;width:100%;text-align:center;color:#9ca3af;font-size:12px}
-@media(max-width:700px){.albumGrid,.mediaGrid{gap:14px;padding:14px}.album,.cover{width:160px}.cover{height:120px}}
+.notice{padding:0 24px;color:#bbb}
+footer{position:fixed;bottom:14px;width:100%;text-align:center;color:#888;font-size:12px;pointer-events:none}
+@media(max-width:700px){.card{width:45%}.card img,.card video{height:120px}}
 </style>
 </head>
 <body>
-<div id="app"></div>
+
+<div class="topbar">
+  <h2>私人云图库</h2>
+</div>
+
+<div class="toolbar">
+  <label class="upload">＋ 上传照片/视频
+    <input type="file" accept="image/*,video/*" multiple onchange="uploadFiles(this.files)">
+  </label>
+  <button onclick="loadFiles()">刷新</button>
+  <span style="color:#aaa">Supabase 云端保存，任何人打开网址都能看到</span>
+</div>
+
+<div id="notice" class="notice">读取中...</div>
+<div id="grid" class="grid"></div>
+<div id="preview"></div>
+
+<footer>本网站内容仅供私人浏览 © 2026</footer>
 
 <script>
-const STORAGE_KEY="private_gallery_albums";
-let albums = loadAlbums();
-let current = null;
-let preview = null;
+const SUPABASE_URL = "https://lkrztdewycwcqjycusay.supabase.co";
+const SUPABASE_KEY = "sb_publishable_JOoemeZyMqq8q5o6edJpew_yVBp_MOU";
+const BUCKET = "gallery";
 
-function loadAlbums(){
+const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const fallbackFiles = [
+  {
+    name:"photo_2025-01-24_03-39-29.jpg",
+    url:"https://lkrztdewycwcqjycusay.supabase.co/storage/v1/object/public/gallery/photo_2025-01-24_03-39-29.jpg",
+    type:"photo"
+  }
+];
+
+function isMedia(name){
+  const n = name.toLowerCase();
+  return n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp") || n.endsWith(".gif") ||
+         n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".webm") || n.endsWith(".m4v");
+}
+
+function isVideo(name){
+  const n = name.toLowerCase();
+  return n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".webm") || n.endsWith(".m4v");
+}
+
+function publicUrl(path){
+  return client.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+async function loadFiles(){
+  document.getElementById("notice").innerText = "读取中...";
+
   try{
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [
-      {id:"album-1",title:"私人照片",date:"2026年5月",cover:"",items:[]},
-      {id:"album-2",title:"私人视频",date:"2026年5月",cover:"",items:[]}
-    ];
-  }catch(e){
-    return [];
-  }
-}
-
-function save(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(albums));
-}
-
-function render(){
-  const app=document.getElementById("app");
-
-  if(current){
-    const items=current.items.map(item=>`
-      <div class="mediaCard">
-        ${item.type==="video"
-          ? `<video src="${item.src}" controls></video>`
-          : `<img src="${item.src}" onclick="openPreview('${item.id}')">`}
-        <button class="delete" onclick="deleteItem('${item.id}')">删除</button>
-      </div>`).join("");
-
-    app.innerHTML = `
-      <div class="page">
-        <div class="topbar">
-          <button onclick="back()">← 返回</button>
-          <h2>${current.title}</h2>
-          <div></div>
-        </div>
-        <div class="upload">
-          <label>＋ 上传照片/视频
-            <input type="file" accept="image/*,video/*" multiple onchange="uploadFiles(this.files)">
-          </label>
-        </div>
-        <div class="mediaGrid">${items}</div>
-        ${preview ? `<div class="preview" onclick="closePreview()"><img src="${preview}"></div>` : ""}
-      </div>`;
-    return;
-  }
-
-  const cards = albums.map(a=>`
-    <div class="album">
-      <div class="cover" onclick="openAlbum('${a.id}')">
-        ${a.cover ? (a.cover.startsWith("data:video") ? `<video src="${a.cover}"></video>` : `<img src="${a.cover}">`) : `<div class="empty">🖼️</div>`}
-        <div class="albumText">
-          <b>💎 ${a.title}</b>
-          <span>${a.date}</span>
-        </div>
-      </div>
-      <button class="albumDelete" onclick="deleteAlbum('${a.id}')">删除相册</button>
-    </div>`).join("");
-
-  app.innerHTML = `
-    <div class="page">
-      <div class="topbar">
-        <div></div>
-        <h2>私人图库</h2>
-        <div></div>
-      </div>
-      <div class="newAlbum">
-        <input id="albumName" placeholder="新相册名称">
-        <button onclick="addAlbum()">＋ 新建相册</button>
-      </div>
-      <div class="albumGrid">${cards}</div>
-      <footer>本网站内容仅供私人浏览 © 2026</footer>
-    </div>`;
-}
-
-function addAlbum(){
-  const title=document.getElementById("albumName").value.trim();
-  if(!title) return alert("请输入相册名称");
-  albums.unshift({id:"album-"+Date.now(),title,date:new Date().toLocaleDateString("zh-CN"),cover:"",items:[]});
-  save();
-  render();
-}
-
-function deleteAlbum(id){
-  if(!confirm("确定删除这个相册吗？")) return;
-  albums=albums.filter(a=>a.id!==id);
-  save();
-  render();
-}
-
-function openAlbum(id){
-  current=albums.find(a=>a.id===id);
-  render();
-}
-
-function back(){
-  current=null;
-  preview=null;
-  render();
-}
-
-function uploadFiles(files){
-  const arr=Array.from(files);
-  Promise.all(arr.map(file=>new Promise(resolve=>{
-    const reader=new FileReader();
-    reader.onload=()=>resolve({
-      id:"item-"+Date.now()+"-"+Math.random(),
-      name:file.name,
-      type:file.type.startsWith("video")?"video":"photo",
-      src:reader.result
+    const { data, error } = await client.storage.from(BUCKET).list("", {
+      limit:100,
+      sortBy:{column:"created_at", order:"desc"}
     });
-    reader.readAsDataURL(file);
-  }))).then(newItems=>{
-    current.items=[...current.items,...newItems];
-    if(!current.cover && current.items[0]) current.cover=current.items[0].src;
-    albums=albums.map(a=>a.id===current.id?current:a);
-    save();
-    render();
-  });
+
+    if(error) throw error;
+
+    let files = (data || [])
+      .filter(f => f.name && isMedia(f.name))
+      .map(f => ({
+        name:f.name,
+        url:publicUrl(f.name),
+        type:isVideo(f.name) ? "video" : "photo"
+      }));
+
+    if(files.length === 0){
+      files = fallbackFiles;
+      document.getElementById("notice").innerText = "暂时读取不到列表，先显示测试图片。";
+    }else{
+      document.getElementById("notice").innerText = "已读取 " + files.length + " 个文件";
+    }
+
+    render(files);
+  }catch(e){
+    document.getElementById("notice").innerText = "读取失败，先显示测试图片。错误：" + e.message;
+    render(fallbackFiles);
+  }
 }
 
-function deleteItem(id){
-  current.items=current.items.filter(i=>i.id!==id);
-  current.cover=current.items[0]?.src || "";
-  albums=albums.map(a=>a.id===current.id?current:a);
-  save();
-  render();
+function render(files){
+  document.getElementById("grid").innerHTML = files.map(item => `
+    <div class="card">
+      ${item.type === "video"
+        ? `<video src="${item.url}" controls></video>`
+        : `<img src="${item.url}" onclick="openPreview('${encodeURIComponent(item.url)}')">`}
+      <div class="name">${item.name}</div>
+    </div>
+  `).join("");
 }
 
-function openPreview(id){
-  const item=current.items.find(i=>i.id===id);
-  preview=item.src;
-  render();
+function openPreview(url){
+  const real = decodeURIComponent(url);
+  document.getElementById("preview").innerHTML = `
+    <div class="preview" onclick="closePreview()">
+      <img src="${real}">
+    </div>
+  `;
 }
 
 function closePreview(){
-  preview=null;
-  render();
+  document.getElementById("preview").innerHTML = "";
 }
 
-render();
+function cleanName(name){
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "jpg";
+  return "file-" + Date.now() + "-" + Math.random().toString(36).slice(2,8) + "." + ext;
+}
+
+async function uploadFiles(fileList){
+  const files = Array.from(fileList || []);
+  if(!files.length) return;
+
+  for(const file of files){
+    const path = cleanName(file.name);
+
+    const { error } = await client.storage.from(BUCKET).upload(path, file, {
+      cacheControl:"3600",
+      upsert:false
+    });
+
+    if(error){
+      alert("上传失败：" + error.message);
+      return;
+    }
+  }
+
+  await loadFiles();
+}
+
+loadFiles();
 </script>
+
 </body>
 </html>
